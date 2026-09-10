@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#EAF1FF">
+<title>HQ Quest Board</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%235B4CFF'/%3E%3Ctext x='50' y='68' font-size='52' font-weight='900' text-anchor='middle' fill='white' font-family='sans-serif'%3EHQ%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%235B4CFF'/%3E%3Ctext x='50' y='68' font-size='52' font-weight='900' text-anchor='middle' fill='white' font-family='sans-serif'%3EHQ%3C/text%3E%3C/svg%3E">
+<style>html,body{margin:0;background:#EAF1FF} #root{min-height:100vh}</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// Storage shim: same API the Claude artifact used, backed by this browser's localStorage.
+window.storage = {
+  async get(key) { const v = localStorage.getItem("hq:" + key); if (v === null) throw new Error("not found"); return { key, value: v }; },
+  async set(key, value) { localStorage.setItem("hq:" + key, value); return { key, value }; },
+  async delete(key) { localStorage.removeItem("hq:" + key); return { key, deleted: true }; },
+  async list(prefix = "") { return { keys: Object.keys(localStorage).filter(k => k.startsWith("hq:" + prefix)).map(k => k.slice(3)) }; },
+};
+</script>
+<script>
+const { useState, useEffect, useRef } = React, HQ_FOLDER_ID = "17jiIN6EGkGcvDW7rYc6nn233URYles7t", STORE_KEY = "hq-quest-state-v3", INK = "#1A1D3A", SECTION_COLORS = {
+  Business: "#5B4CFF",
+  Income: "#00A87E",
+  Music: "#FF4FA3",
+  Health: "#FF5A3C",
+  General: "#3A86FF",
+  Life: "#8A8FA8"
+}, seed = {
+  version: 3,
+  life: [],
+  drinkLog: {},
+  checkouts: [],
+  // {date, done:[..], blocked:[{text,why}], drinks, tomorrowOne}
+  streak: 0,
+  lastGreenDay: null,
+  floor: "15 min on #1, then move.",
+  q4: "The booking agency has paying clients.",
+  ifThen: "If I open ClickUp or go looking for a new app, then I close it and open the quest board instead.",
+  today: [
+    { id: "t1", section: "Income", text: "Send 3 job applications", track: "job-apps", amount: 3 },
+    { id: "t2", section: "Music", text: "EPK v1: write the bio and choose 3 photos", track: null },
+    { id: "t3", section: "Health", text: "Weights, done. Tap it.", track: "weights", amount: 1 }
+  ],
+  sections: [
+    { id: "Business", name: "Business", sub: "XCC, TBC, Sixtown", goal: "Booking agency relaunched and 25 to 50 promoters asked what they need.", tracks: [
+      { id: "promoters", type: "count", name: "Promoter outreach sent", target: 50, count: 0, note: "Minimum 25. Ask: still have slots, what sounds do you need." },
+      { id: "ag-page", type: "tick", name: "Agency one-pager or landing page live", count: 0, target: 1 },
+      { id: "ag-roster", type: "tick", name: "Artist roster page", count: 0, target: 1 },
+      { id: "ag-rate", type: "tick", name: "Rate card", count: 0, target: 1 },
+      { id: "ag-email", type: "tick", name: "Booking email set up", count: 0, target: 1 },
+      { id: "cons-onepager", type: "tick", name: "Consulting one-pager created", count: 0, target: 1 },
+      { id: "cons-list", type: "tick", name: "50-company consulting list built", count: 0, target: 1 },
+      { id: "cons-apps", type: "count", name: "Consulting applications sent", target: 12, count: 0, note: "5 per week from Monday." }
+    ] },
+    { id: "Income", name: "Income", sub: "Jobs and hygiene", goal: "30 job applications sent and the three hygiene items closed.", tracks: [
+      { id: "job-apps", type: "count", name: "Job applications sent", target: 30, count: 0, note: "10 per week. Claude drafts." },
+      { id: "levy", type: "tick", name: "Langebaan levy paid", count: 0, target: 1 },
+      { id: "origin", type: "tick", name: "Origin Investments returns handled", count: 0, target: 1 },
+      { id: "bc-returns", type: "tick", name: "Banana Cartel returns handled", count: 0, target: 1 }
+    ] },
+    { id: "Music", name: "Music", sub: "D4MI4N", goal: "EPK and DJ set public, one demo a week, 10 show applications a week.", tracks: [
+      { id: "demos", type: "count", name: "Song demos created", target: 3, count: 0, note: "One a week. A demo counts." },
+      { id: "show-apps", type: "count", name: "Show applications sent", target: 25, count: 0, note: "10 per week to start." },
+      { id: "epk", type: "tick", name: "EPK v1 finished", count: 0, target: 1, note: "This weekend." },
+      { id: "djset", type: "tick", name: "DJ set recorded and public", count: 0, target: 1, note: "This weekend." }
+    ] },
+    { id: "Health", name: "Health", sub: "Body, golf, mind, people", goal: "Weights twice, golf once, one thing with B, every week. Mental health session booked. Drinks logged daily.", tracks: [
+      { id: "weights", type: "count", name: "Weights sessions", target: 6, count: 1, note: "2 per week. Started 10 Sep." },
+      { id: "golf", type: "count", name: "Golf, practice or play", target: 3, count: 0, note: "1 per week from Monday." },
+      { id: "mh-book", type: "tick", name: "Mental health session booked", count: 0, target: 1, note: "Then 1 per month." },
+      { id: "family", type: "count", name: "Relationship / family thing", target: 3, count: 1, note: "1 per week. This week: Langebaan with B." }
+    ] },
+    { id: "General", name: "General", sub: "Money", goal: "A simple personal finance strategy exists and has been updated five times.", tracks: [
+      { id: "fin-strategy", type: "tick", name: "Personal finance strategy created", count: 0, target: 1 },
+      { id: "fin-updates", type: "count", name: "Finance strategy updated", target: 5, count: 0 }
+    ] }
+  ],
+  habits: [
+    { id: "weights", name: "Weights", weekly: 2 },
+    { id: "golf", name: "Golf", weekly: 1 },
+    { id: "demos", name: "Song demo", weekly: 1 },
+    { id: "family", name: "Family / B", weekly: 1 },
+    { id: "show-apps", name: "Show apps", weekly: 10 },
+    { id: "job-apps", name: "Job apps", weekly: 10 }
+  ],
+  events: [
+    // every increment or tick, for weekly habit counts and the archive
+    { date: "2026-09-10", track: "weights", section: "Health", text: "Weights session", n: 1 },
+    { date: "2026-09-10", track: "family", section: "Health", text: "Langebaan weekend with B", n: 1 }
+  ],
+  planner: [],
+  // {date, mood, energy, stress, drinks, thinking, okay, stressor, dropped, floorOnly}
+  inbox: [],
+  wins: [{ date: "2026-09-10", text: "Reset the whole system with clear numbers for September." }],
+  pending: []
+}, todayKey = () => (/* @__PURE__ */ new Date()).toISOString().slice(0, 10), niceDate = () => (/* @__PURE__ */ new Date()).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }), weekStart = () => {
+  const d = /* @__PURE__ */ new Date(), day = (d.getDay() + 6) % 7;
+  return d.setDate(d.getDate() - day), d.toISOString().slice(0, 10);
+};
+function HQQuestBoard() {
+  var _a;
+  const [s, setS] = useState(seed), [loaded, setLoaded] = useState(!1), [view, setView] = useState("board"), [openSec, setOpenSec] = useState(null), [dump, setDump] = useState(""), [syncMsg, setSyncMsg] = useState(""), [busy, setBusy] = useState(!1), [burst, setBurst] = useState(null), burstTimer = useRef(null), [mood, setMood] = useState(0), [energy, setEnergy] = useState(0), [stress, setStress] = useState(0), [stressor, setStressor] = useState(""), [lifeText, setLifeText] = useState(""), [drinkInput, setDrinkInput] = useState(""), [why, setWhy] = useState({}), [coDrinks, setCoDrinks] = useState(""), [tomorrowOne, setTomorrowOne] = useState(""), [drinks, setDrinks] = useState(""), [thinking, setThinking] = useState(""), [okay, setOkay] = useState(""), [dropped, setDropped] = useState(""), [dropChoice, setDropChoice] = useState(""), [floorOnly, setFloorOnly] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get(STORE_KEY, !1);
+        if (r && r.value) {
+          const v = JSON.parse(r.value);
+          v.version === 3 && setS({ ...seed, ...v });
+        }
+      } catch (e) {
+      }
+      setLoaded(!0);
+    })();
+  }, []), useEffect(() => {
+    loaded && (async () => {
+      try {
+        await window.storage.set(STORE_KEY, JSON.stringify(s), !1);
+      } catch (e) {
+      }
+    })();
+  }, [s, loaded]);
+  const pop = (label) => {
+    setBurst(label), clearTimeout(burstTimer.current), burstTimer.current = setTimeout(() => setBurst(null), 1300);
+  }, markGreen = (prev) => {
+    const t = todayKey();
+    if (prev.lastGreenDay === t) return prev;
+    const y = /* @__PURE__ */ new Date();
+    y.setDate(y.getDate() - 1);
+    const cont = prev.lastGreenDay === y.toISOString().slice(0, 10);
+    return { ...prev, streak: cont ? prev.streak + 1 : 1, lastGreenDay: t };
+  }, findTrack = (st, id) => {
+    for (const sec of st.sections) {
+      const tr = sec.tracks.find((t) => t.id === id);
+      if (tr) return { sec, tr };
+    }
+    return null;
+  }, bump = (trackId, n, label) => {
+    setS((prev) => {
+      const f = findTrack(prev, trackId);
+      if (!f) return prev;
+      const sections = prev.sections.map((sec) => sec.id !== f.sec.id ? sec : { ...sec, tracks: sec.tracks.map((t) => t.id !== trackId ? t : { ...t, count: Math.max(0, Math.min(t.target, t.count + n)) }) });
+      return n <= 0 ? { ...prev, sections, pending: [...prev.pending, `undo: [${f.sec.name}] ${f.tr.name} ${n}`] } : {
+        ...prev,
+        sections,
+        events: [...prev.events, { date: todayKey(), track: trackId, section: f.sec.name, text: label || f.tr.name, n }],
+        wins: [{ date: todayKey(), text: `${label || f.tr.name}${n > 1 ? ` (+${n})` : ""}` }, ...prev.wins],
+        pending: [...prev.pending, f.tr.type === "tick" ? `done: [${f.sec.name}] ${f.tr.name}` : `count: [${f.sec.name}] ${f.tr.name} +${n}`]
+      };
+    });
+  }, completeToday = (task) => {
+    task.track && bump(task.track, task.amount || 1, task.text), setS((prev) => {
+      const base = task.track ? prev : { ...prev, wins: [{ date: todayKey(), text: task.text }, ...prev.wins], events: [...prev.events, { date: todayKey(), track: null, section: task.section, text: task.text, n: 1 }], pending: [...prev.pending, `done: [${task.section}] ${task.text}`] }, today = base.today.filter((x) => x.id !== task.id);
+      return today.length === 0 ? markGreen({ ...base, today }) : { ...base, today };
+    }), pop("Cleared");
+  }, pushTask = (task) => setS((prev) => ({ ...prev, today: prev.today.filter((x) => x.id !== task.id), pending: [...prev.pending, `push: ${task.text}`] })), floorDone = () => {
+    setS((prev) => markGreen({ ...prev, pending: [...prev.pending, "floor"] })), pop("Green day");
+  }, addDump = () => {
+    const t = dump.trim();
+    t && (setS((prev) => ({ ...prev, inbox: [...prev.inbox, t], pending: [...prev.pending, `dump: ${t}`] })), setDump(""), pop("Caught"));
+  }, savePlanner = () => {
+    const entry = { date: todayKey(), mood, energy, stress, stressor: stressor.trim(), drinks: drinks === "" ? null : Number(drinks), thinking: thinking.trim(), okay: okay.trim(), dropped: dropped.trim(), dropChoice, floorOnly: !!floorOnly };
+    setS((prev) => {
+      const lines = [`planner: mood ${mood} energy ${energy} stress ${stress}${entry.drinks !== null ? ` drinks ${entry.drinks}` : ""}`];
+      entry.stressor && lines.push(`note: main stressor: ${entry.stressor}`);
+      const y = /* @__PURE__ */ new Date();
+      y.setDate(y.getDate() - 1);
+      const yk = y.toISOString().slice(0, 10), drinkLog = entry.drinks !== null ? { ...prev.drinkLog, [yk]: entry.drinks } : prev.drinkLog;
+      entry.thinking && lines.push(`dump: ${entry.thinking}`), entry.okay && lines.push(`note: what would make today okay: ${entry.okay}`), entry.dropped && lines.push(`${dropChoice === "drop" ? "drop" : "park"}: ${entry.dropped}`), entry.floorOnly && lines.push("floor-only today");
+      let today = prev.today;
+      entry.floorOnly && today.length && (lines.push(...today.map((t) => `push: ${t.text}`)), today = []);
+      const inbox = entry.thinking ? [...prev.inbox, entry.thinking] : prev.inbox;
+      return { ...prev, today, inbox, drinkLog, planner: [entry, ...prev.planner.filter((p) => p.date !== entry.date)], pending: [...prev.pending, ...lines] };
+    }), setMood(0), setEnergy(0), setStress(0), setStressor(""), setDrinks(""), setThinking(""), setOkay(""), setDropped(""), setDropChoice(""), setFloorOnly(null), setView("board"), pop("Planned");
+  }, addLife = () => {
+    const t = lifeText.trim();
+    t && (setS((prev) => ({ ...prev, life: [...prev.life, { id: "l" + Date.now(), text: t, done: null }], pending: [...prev.pending, `life: ${t}`] })), setLifeText(""));
+  }, toggleLife = (item) => {
+    setS((prev) => item.done ? { ...prev, life: prev.life.map((l) => l.id === item.id ? { ...l, done: null } : l) } : { ...prev, life: prev.life.map((l) => l.id === item.id ? { ...l, done: todayKey() } : l), events: [...prev.events, { date: todayKey(), track: null, section: "Life", text: item.text, n: 0 }], pending: [...prev.pending, `life-done: ${item.text}`] }), item.done || pop("Done");
+  }, logDrink = (dateKey, units) => setS((prev) => ({ ...prev, drinkLog: { ...prev.drinkLog, [dateKey]: units }, pending: [...prev.pending, `drinks: ${dateKey} ${units}`] })), last14 = () => Array.from({ length: 14 }, (_, i) => {
+    const d = /* @__PURE__ */ new Date();
+    return d.setDate(d.getDate() - (13 - i)), d.toISOString().slice(0, 10);
+  }), saveCheckout = () => {
+    const doneToday = s.events.filter((e) => e.date === todayKey() && e.section !== "Life").map((e) => e.text), blocked = s.today.map((t) => ({ text: t.text, why: (why[t.id] || "").trim() })), entry = { date: todayKey(), done: doneToday, blocked, drinks: coDrinks === "" ? null : Number(coDrinks), tomorrowOne: tomorrowOne.trim() };
+    setS((prev) => {
+      const lines = [`checkout: ${doneToday.length} done, ${blocked.length} open`];
+      blocked.forEach((b) => lines.push(`blocked: ${b.text} :: ${b.why || "no reason given"}`)), entry.drinks !== null && lines.push(`drinks: ${todayKey()} ${entry.drinks}`), entry.tomorrowOne && lines.push(`tomorrow-1: ${entry.tomorrowOne}`);
+      const drinkLog = entry.drinks !== null ? { ...prev.drinkLog, [todayKey()]: entry.drinks } : prev.drinkLog, base = { ...prev, drinkLog, checkouts: [entry, ...prev.checkouts.filter((c) => c.date !== entry.date)], pending: [...prev.pending, ...lines] };
+      return blocked.length === 0 && doneToday.length > 0 ? markGreen(base) : base;
+    }), setWhy({}), setCoDrinks(""), setTomorrowOne(""), setView("board"), pop("Closed");
+  }, replyText = () => s.pending.length ? s.pending.join(`
+`) : "(nothing to sync)", copyReply = async () => {
+    try {
+      await navigator.clipboard.writeText(replyText()), setSyncMsg("Copied. Paste it to Claude in chat.");
+    } catch (e) {
+      setSyncMsg("Select the text below and copy it.");
+    }
+  }, callClaude = async (prompt) => {
+    const key = localStorage.getItem("hq-api-key") || "";
+    if (!key) throw new Error("no key");
+    return ((await (await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1e3, messages: [{ role: "user", content: prompt }], mcp_servers: [{ type: "url", url: "https://drivemcp.googleapis.com/mcp/v1", name: "gdrive" }] }) })).json()).content || []).filter((b) => b.type === "text").map((b) => b.text).join(`
+`);
+  }, pushToHQ = async () => {
+    if (!s.pending.length) {
+      setSyncMsg("Nothing to push.");
+      return;
+    }
+    setBusy(!0), setSyncMsg("Writing sync note to Drive...");
+    try {
+      const body = `# Sync from quest board ${(/* @__PURE__ */ new Date()).toISOString()}
+
+${s.pending.map((p) => `- ${p}`).join(`
+`)}
+`;
+      await callClaude(`Using the Google Drive tools, create a new plain-text markdown file named "sync-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.md" inside the folder with id ${HQ_FOLDER_ID}. Do not convert it to a Google Doc. The file content is exactly:
+
+${body}
+
+Reply with the single word OK when done.`), setS((prev) => ({ ...prev, pending: [] })), setSyncMsg("Pushed. Claude merges it at the next brief.");
+    } catch (e) {
+      setSyncMsg("Push needs an API key (Settings below), or use Copy reply and paste it to Claude.");
+    }
+    setBusy(!1);
+  }, pullFromHQ = async () => {
+    setBusy(!0), setSyncMsg("Reading now.md from Drive...");
+    try {
+      const txt = await callClaude(`Using the Google Drive tools, find the folder with id ${HQ_FOLDER_ID} and read the file now.md. Return ONLY JSON, no prose, no code fences: {"today":[{"id":"t1","section":"Business|Income|Music|Health|General","text":"task text","track":null}],"floor":"text","ifThen":"one sentence or empty"}. Take today's three from the Today section.`), j = JSON.parse(txt.replace(/```json|```/g, "").trim());
+      setS((prev) => {
+        var _a2;
+        return { ...prev, today: (_a2 = j.today) != null && _a2.length ? j.today : prev.today, floor: j.floor || prev.floor, ifThen: j.ifThen || prev.ifThen };
+      }), setSyncMsg("Pulled today's three from HQ.");
+    } catch (e) {
+      setSyncMsg("Pull needs an API key (Settings below), or ask Claude in chat for today's three.");
+    }
+    setBusy(!1);
+  }, resetAll = async () => {
+    if (confirm("Reset the board to the starting state? Drive files are untouched.")) {
+      setS(seed);
+      try {
+        await window.storage.delete(STORE_KEY, !1);
+      } catch (e) {
+      }
+    }
+  }, card = { background: "#fff", border: `3px solid ${INK}`, borderRadius: 18, boxShadow: `6px 6px 0 ${INK}` }, btn = (bg, color = INK, extra = {}) => ({ background: bg, color, border: `3px solid ${INK}`, borderRadius: 14, boxShadow: `4px 4px 0 ${INK}`, fontWeight: 800, padding: "12px 16px", cursor: "pointer", fontSize: 16, lineHeight: 1, fontFamily: "inherit", ...extra }), secProgress = (sec) => {
+    const t = sec.tracks.reduce((a, x) => a + x.target, 0), c = sec.tracks.reduce((a, x) => a + x.count, 0);
+    return { c, t, pct: t ? Math.round(c / t * 100) : 0 };
+  }, weekCount = (trackId) => s.events.filter((e) => e.track === trackId && e.date >= weekStart()).reduce((a, e) => a + e.n, 0), totalCleared = s.events.reduce((a, e) => a + e.n, 0), totalTarget = s.sections.reduce((a, sec) => a + sec.tracks.reduce((b, t) => b + t.target, 0), 0), totalCount = s.sections.reduce((a, sec) => a + sec.tracks.reduce((b, t) => b + t.count, 0), 0), plannedToday = s.planner.find((p) => p.date === todayKey());
+  if (!loaded) return /* @__PURE__ */ React.createElement("div", { style: { padding: 40, fontFamily: "system-ui", color: INK } }, "Loading the board...");
+  const Shell = ({ children }) => /* @__PURE__ */ React.createElement("div", { style: { minHeight: "100vh", background: "#EAF1FF", fontFamily: "ui-rounded, 'SF Pro Rounded', system-ui, sans-serif", color: INK, padding: "20px 14px 60px" } }, /* @__PURE__ */ React.createElement("style", null, `
+        @keyframes hqpop { 0%{transform:translate(-50%,-50%) scale(.6);opacity:0} 20%{transform:translate(-50%,-50%) scale(1.1);opacity:1} 80%{opacity:1} 100%{transform:translate(-50%,-70%) scale(1);opacity:0} }
+        @media (prefers-reduced-motion: reduce) { .hqburst { animation: none !important; } }
+        button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 4px solid #5B4CFF; outline-offset: 2px; }
+        button:disabled { opacity: .5; cursor: default; }
+      `), burst && /* @__PURE__ */ React.createElement("div", { className: "hqburst", style: { position: "fixed", left: "50%", top: "40%", transform: "translate(-50%,-50%)", zIndex: 50, background: "#C9F24A", ...card, padding: "18px 28px", fontSize: 34, fontWeight: 900, animation: "hqpop 1.3s ease-out forwards", pointerEvents: "none" } }, burst), /* @__PURE__ */ React.createElement("div", { style: { maxWidth: 480, margin: "0 auto", display: "flex", flexDirection: "column", gap: 18 } }, children)), Header = ({ title, right }) => /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 700, opacity: 0.7 } }, niceDate()), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 34, fontWeight: 900, letterSpacing: -1, lineHeight: 1 } }, title)), right), Tabs = () => /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 6, background: "#fff", border: `3px solid ${INK}`, borderRadius: 14, padding: 4 } }, [["board", "Board"], ["goals", "Goals"], ["life", "Life"], ["archive", "Archive"]].map(([k, l]) => /* @__PURE__ */ React.createElement("button", { key: k, onClick: () => setView(k), "aria-pressed": view === k, style: { flex: 1, background: view === k ? INK : "transparent", color: view === k ? "#fff" : INK, border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit" } }, l)));
+  if (view === "goals")
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Goals" }), /* @__PURE__ */ React.createElement(Tabs, null), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: INK, color: "#fff", boxShadow: "6px 6px 0 #5B4CFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.75 } }, "Q4, Oct to Dec"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 24, fontWeight: 900, lineHeight: 1.2 } }, s.q4), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.75, marginTop: 14 } }, "September, all inputs"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 56, fontWeight: 900, lineHeight: 1 } }, totalCount), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 16, fontWeight: 800, opacity: 0.8 } }, "of ", totalTarget)), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 8, height: 18, border: "3px solid #fff", borderRadius: 10, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${totalTarget ? Math.round(totalCount / totalTarget * 100) : 0}%`, height: "100%", background: "#C9F24A" } }))), s.sections.map((sec) => {
+      const p = secProgress(sec);
+      return /* @__PURE__ */ React.createElement("div", { key: sec.id, style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 900, color: SECTION_COLORS[sec.id] } }, sec.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 40, fontWeight: 900, lineHeight: 1 } }, p.pct, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 16, opacity: 0.6 } }, "%"))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.35, margin: "6px 0 10px" } }, sec.goal), /* @__PURE__ */ React.createElement("div", { style: { height: 18, border: `3px solid ${INK}`, borderRadius: 10, background: "#F4F6FF", overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${p.pct}%`, height: "100%", background: SECTION_COLORS[sec.id] } })), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, display: "flex", flexDirection: "column", gap: 4 } }, sec.tracks.map((t) => /* @__PURE__ */ React.createElement("div", { key: t.id, style: { display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 } }, /* @__PURE__ */ React.createElement("span", { style: { opacity: t.count >= t.target ? 0.5 : 1, textDecoration: t.count >= t.target ? "line-through" : "none" } }, t.name), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 900 } }, t.type === "tick" ? t.count ? "done" : "open" : `${t.count}/${t.target}`)))));
+    }));
+  if (view === "life") {
+    const openItems = s.life.filter((l) => !l.done), doneItems = s.life.filter((l) => l.done).slice(-15).reverse();
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Life" }), /* @__PURE__ */ React.createElement(Tabs, null), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 8 } }, "Errands and admin. Never counted on the scoreboard, never in the three unless you ask."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, /* @__PURE__ */ React.createElement("input", { value: lifeText, onChange: (e) => setLifeText(e.target.value), onKeyDown: (e) => {
+      e.key === "Enter" && addLife();
+    }, placeholder: "Book venue, laundry, renew licence", style: { flex: 1, minWidth: 0, border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600 } }), /* @__PURE__ */ React.createElement("button", { onClick: addLife, style: btn("#C9F24A") }, "Add"))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Open"), openItems.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, opacity: 0.6 } }, "Nothing open."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, openItems.map((l) => /* @__PURE__ */ React.createElement("button", { key: l.id, onClick: () => toggleLife(l), style: { display: "flex", gap: 10, alignItems: "center", background: "#fff", border: `2px solid ${INK}`, borderRadius: 10, padding: "10px", cursor: "pointer", textAlign: "left", color: INK, fontFamily: "inherit" } }, /* @__PURE__ */ React.createElement("span", { style: { width: 22, height: 22, borderRadius: 6, border: `2px solid ${INK}`, flexShrink: 0 } }), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 15, fontWeight: 700 } }, l.text))))), doneItems.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: "#F4F6FF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Done"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, doneItems.map((l) => /* @__PURE__ */ React.createElement("button", { key: l.id, onClick: () => toggleLife(l), style: { display: "flex", gap: 10, alignItems: "center", background: "transparent", border: "none", padding: "4px 0", cursor: "pointer", textAlign: "left", color: INK, fontFamily: "inherit", fontSize: 14, fontWeight: 700, opacity: 0.6 } }, /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.7, width: 38 } }, l.done.slice(5)), /* @__PURE__ */ React.createElement("span", { style: { textDecoration: "line-through" } }, l.text))))));
+  }
+  if (view === "checkout") {
+    const doneToday = s.events.filter((e) => e.date === todayKey() && e.section !== "Life"), canSave = s.today.every((t) => (why[t.id] || "").trim().length > 0);
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Evening", right: /* @__PURE__ */ React.createElement("button", { onClick: () => setView("board"), style: btn("#fff") }, "Back") }), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Today's core tasks"), doneToday.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 10, alignItems: "center", padding: "6px 0", fontSize: 15, fontWeight: 700 } }, /* @__PURE__ */ React.createElement("span", { style: { width: 22, height: 22, borderRadius: 6, border: `2px solid ${INK}`, background: "#C9F24A", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 900, flexShrink: 0 } }, "\u2713"), /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.7, textDecoration: "line-through" } }, e.text))), s.today.map((t) => /* @__PURE__ */ React.createElement("div", { key: t.id, style: { marginTop: 8, background: "#FFF8DC", border: `2px solid ${INK}`, borderRadius: 12, padding: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, alignItems: "center", fontSize: 15, fontWeight: 800 } }, /* @__PURE__ */ React.createElement("span", { style: { width: 22, height: 22, borderRadius: 6, border: `2px solid ${INK}`, background: "#fff", flexShrink: 0 } }), /* @__PURE__ */ React.createElement("span", null, t.text), /* @__PURE__ */ React.createElement("button", { onClick: () => completeToday(t), style: { ...btn(SECTION_COLORS[t.section] || "#5B4CFF", "#fff"), marginLeft: "auto", padding: "6px 10px", fontSize: 13, boxShadow: `2px 2px 0 ${INK}` } }, "Actually done")), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, margin: "8px 0 4px" } }, "What got in the way? One line, no judgement."), /* @__PURE__ */ React.createElement("input", { value: why[t.id] || "", onChange: (e) => setWhy({ ...why, [t.id]: e.target.value }), placeholder: "Ran out of time, avoided it, wrong task, life happened", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 15, fontFamily: "inherit", fontWeight: 600 } }))), s.today.length === 0 && doneToday.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 700, opacity: 0.6 } }, "Nothing on the board today."), s.today.length === 0 && doneToday.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { fontWeight: 800, marginTop: 6 } }, "All clear. Green day.")), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900 } }, "Habits today"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800, opacity: 0.6 } }, "tap what you did")), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } }, s.habits.map((h) => {
+      const c = weekCount(h.id), todayC = s.events.filter((e) => e.track === h.id && e.date === todayKey()).reduce((a, e) => a + e.n, 0);
+      return /* @__PURE__ */ React.createElement("button", { key: h.id, onClick: () => {
+        bump(h.id, 1), pop("+1");
+      }, style: { ...card, boxShadow: `3px 3px 0 ${INK}`, background: todayC > 0 ? "#C9F24A" : "#fff", padding: "10px 8px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: INK } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800 } }, h.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 900, lineHeight: 1 } }, todayC, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, opacity: 0.6 } }, " today")), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 800, opacity: 0.6, marginTop: 2 } }, c, " / ", h.weekly, " this week"));
+    }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Drinks today"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 10 } }, "Units. 0 is a clear day."), /* @__PURE__ */ React.createElement("input", { inputMode: "numeric", value: coDrinks, onChange: (e) => setCoDrinks(e.target.value.replace(/[^0-9]/g, "")), placeholder: String((_a = s.drinkLog[todayKey()]) != null ? _a : 0), style: { width: 120, border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 28, fontWeight: 900, fontFamily: "inherit" } })), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Tomorrow's #1"), /* @__PURE__ */ React.createElement("input", { value: tomorrowOne, onChange: (e) => setTomorrowOne(e.target.value), placeholder: "Optional. The one thing, so the morning starts decided.", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 15, fontFamily: "inherit", fontWeight: 600 } })), /* @__PURE__ */ React.createElement("button", { disabled: !canSave, onClick: saveCheckout, style: btn("#5B4CFF", "#fff", { fontSize: 20, padding: "16px" }) }, "Close the day"), !canSave && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, textAlign: "center" } }, "Fill in a reason for each open task to close the day."));
+  }
+  if (view === "archive") {
+    const byMonth = {};
+    [...s.events].reverse().forEach((e) => {
+      const m = e.date.slice(0, 7);
+      (byMonth[m] = byMonth[m] || []).push(e);
+    });
+    const months = Object.keys(byMonth).sort().reverse();
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Archive" }), /* @__PURE__ */ React.createElement(Tabs, null), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: "#C9F24A" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 48, fontWeight: 900, lineHeight: 1 } }, totalCleared), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 800 } }, "objectives cleared since 10 Sep. Nothing here is ever deleted.")), months.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, fontWeight: 700 } }, "Nothing archived yet. Clear something on the board and it lands here."), months.map((m) => /* @__PURE__ */ React.createElement("div", { key: m, style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, (/* @__PURE__ */ new Date(m + "-01")).toLocaleDateString("en-GB", { month: "long", year: "numeric" })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, byMonth[m].map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 8, alignItems: "center", fontSize: 14, fontWeight: 700 } }, /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.55, flexShrink: 0, width: 38 } }, e.date.slice(5)), /* @__PURE__ */ React.createElement("span", { style: { width: 9, height: 9, borderRadius: 3, background: SECTION_COLORS[e.section] || INK, flexShrink: 0 } }), /* @__PURE__ */ React.createElement("span", null, e.text, e.n > 1 ? ` (+${e.n})` : "", e.section === "Life" ? " (life)" : "")))))), s.checkouts.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Evening checkouts"), s.checkouts.map((c) => /* @__PURE__ */ React.createElement("div", { key: c.date, style: { fontSize: 14, fontWeight: 700, padding: "6px 0", borderBottom: "1px solid #ddd" } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.55 } }, c.date.slice(5)), " ", c.done.length, " done, ", c.blocked.length, " open", c.drinks !== null ? `, drinks ${c.drinks}` : ""), c.blocked.map((b, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { fontSize: 13, opacity: 0.75, paddingLeft: 40 } }, b.text, ": ", b.why))))), s.planner.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Morning check-ins"), s.planner.map((p) => /* @__PURE__ */ React.createElement("div", { key: p.date, style: { fontSize: 14, fontWeight: 700, padding: "4px 0", borderBottom: "1px solid #ddd" } }, /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.55 } }, p.date.slice(5)), " mood ", p.mood, ", energy ", p.energy, ", stress ", p.stress || "-", p.drinks !== null ? `, drinks ${p.drinks}` : "", p.floorOnly ? ", floor day" : ""))));
+  }
+  if (view === "planner") {
+    const Scale = ({ value, onChange, labels }) => /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8 } }, [1, 2, 3, 4, 5].map((n) => /* @__PURE__ */ React.createElement("button", { key: n, onClick: () => onChange(n), "aria-pressed": value === n, style: { ...btn(value === n ? "#FFC93C" : "#fff"), flex: 1, padding: "14px 0", fontSize: 22, boxShadow: value === n ? `2px 2px 0 ${INK}` : `4px 4px 0 ${INK}` } }, n))), canSave = mood > 0 && energy > 0 && stress > 0 && (!dropped.trim() || dropChoice) && (energy > 2 || floorOnly !== null);
+    return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Morning", right: /* @__PURE__ */ React.createElement("button", { onClick: () => setView("board"), style: btn("#fff") }, "Back") }), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Mood"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 10 } }, "1 rough, 5 great"), /* @__PURE__ */ React.createElement(Scale, { value: mood, onChange: setMood }), mood > 0 && mood <= 2 && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 800, marginBottom: 6 } }, "What would make today okay?"), /* @__PURE__ */ React.createElement("input", { value: okay, onChange: (e) => setOkay(e.target.value), placeholder: "One thing, small is fine", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600 } }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Energy"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 10 } }, "1 empty, 5 full"), /* @__PURE__ */ React.createElement(Scale, { value: energy, onChange: setEnergy }), energy > 0 && energy <= 2 && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 800, marginBottom: 8 } }, "Floor only today? The three roll to tomorrow, no penalty."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setFloorOnly(!0), style: btn(floorOnly === !0 ? "#FF5A3C" : "#fff", floorOnly === !0 ? "#fff" : INK) }, "Yes, floor only"), /* @__PURE__ */ React.createElement("button", { onClick: () => setFloorOnly(!1), style: btn(floorOnly === !1 ? "#C9F24A" : "#fff") }, "No, keep the three")))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Stress"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 10 } }, "1 calm, 5 maxed out"), /* @__PURE__ */ React.createElement(Scale, { value: stress, onChange: setStress }), stress >= 4 && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 800, marginBottom: 6 } }, "What's the main thing? One line. If it's a task, it goes on tomorrow's three."), /* @__PURE__ */ React.createElement("input", { value: stressor, onChange: (e) => setStressor(e.target.value), placeholder: "The thing sitting on your chest", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600 } }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Drinks yesterday"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.65, marginBottom: 10 } }, "Units. Just the log, no target."), /* @__PURE__ */ React.createElement("input", { inputMode: "numeric", value: drinks, onChange: (e) => setDrinks(e.target.value.replace(/[^0-9]/g, "")), placeholder: "0", style: { width: 120, border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 28, fontWeight: 900, fontFamily: "inherit" } })), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Thinking about doing"), /* @__PURE__ */ React.createElement("textarea", { value: thinking, onChange: (e) => setThinking(e.target.value), rows: 2, placeholder: "Goes to the inbox. Claude sorts it.", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600, resize: "vertical" } })), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "No longer a goal"), /* @__PURE__ */ React.createElement("textarea", { value: dropped, onChange: (e) => setDropped(e.target.value), rows: 2, placeholder: "Name it so it stops haunting the board.", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600, resize: "vertical" } }), dropped.trim() && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 800, marginBottom: 8 } }, "Park it for later, or drop it for good?"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setDropChoice("park"), style: btn(dropChoice === "park" ? "#FFC93C" : "#fff") }, "Park"), /* @__PURE__ */ React.createElement("button", { onClick: () => setDropChoice("drop"), style: btn(dropChoice === "drop" ? "#FF5A3C" : "#fff", dropChoice === "drop" ? "#fff" : INK) }, "Drop")))), /* @__PURE__ */ React.createElement("button", { disabled: !canSave, onClick: savePlanner, style: btn("#5B4CFF", "#fff", { fontSize: 20, padding: "16px" }) }, "Start the day"));
+  }
+  return /* @__PURE__ */ React.createElement(Shell, null, /* @__PURE__ */ React.createElement(Header, { title: "Quest board", right: /* @__PURE__ */ React.createElement("div", { style: { ...card, background: "#FFC93C", padding: "8px 14px", textAlign: "center", minWidth: 92 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 40, fontWeight: 900, lineHeight: 1 } }, s.streak), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800 } }, "day streak")) }), /* @__PURE__ */ React.createElement(Tabs, null), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setView("planner"), style: btn(plannedToday ? "#fff" : "#FFC93C", INK, { flex: 1 }) }, plannedToday ? "Morning, done" : "Morning check-in"), /* @__PURE__ */ React.createElement("button", { onClick: () => setView("checkout"), style: btn(s.checkouts.find((c) => c.date === todayKey()) ? "#fff" : "#5B4CFF", s.checkouts.find((c) => c.date === todayKey()) ? INK : "#fff", { flex: 1 }) }, s.checkouts.find((c) => c.date === todayKey()) ? "Evening, done" : "Evening checkout")), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 10 } }, "Today's three"), s.today.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 16, fontWeight: 700, padding: "8px 0" } }, plannedToday != null && plannedToday.floorOnly ? "Floor day. The three roll to tomorrow." : "Board is clear. Rest, or pull tomorrow's three from HQ."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 10 } }, s.today.slice(0, 3).map((t, i) => /* @__PURE__ */ React.createElement("div", { key: t.id, style: { display: "flex", gap: 10, alignItems: "stretch" } }, /* @__PURE__ */ React.createElement("button", { onClick: () => completeToday(t), "aria-label": `Clear task ${i + 1}`, style: { ...btn(SECTION_COLORS[t.section] || "#5B4CFF", "#fff"), width: 64, fontSize: 28, padding: 0, flexShrink: 0 } }, i + 1), /* @__PURE__ */ React.createElement("div", { style: { flex: 1, background: "#F4F6FF", border: `2px solid ${INK}`, borderRadius: 12, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800, color: SECTION_COLORS[t.section] || INK } }, t.section), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 700, lineHeight: 1.25 } }, t.text), /* @__PURE__ */ React.createElement("button", { onClick: () => pushTask(t), style: { background: "none", border: "none", padding: 0, marginTop: 4, fontSize: 12, fontWeight: 800, color: "#5B4CFF", cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" } }, "Push to tomorrow")))))), /* @__PURE__ */ React.createElement("button", { onClick: floorDone, style: btn("#FF5A3C", "#fff", { textAlign: "left", padding: "14px 16px" }) }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.9 } }, "Floor, bad day minimum"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 900, marginTop: 4 } }, s.floor), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, marginTop: 6, opacity: 0.9 } }, "Tap when done. Counts as a green day.")), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: INK, color: "#fff", boxShadow: "6px 6px 0 #5B4CFF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.75 } }, "Q4 headline"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 900, lineHeight: 1.2, marginBottom: 14 } }, s.q4), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.75 } }, "September, all sections"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 48, fontWeight: 900, lineHeight: 1 } }, totalCount), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 16, fontWeight: 800, opacity: 0.8 } }, "of ", totalTarget, " inputs")), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 8, height: 18, border: "3px solid #fff", borderRadius: 10, overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${totalTarget ? Math.round(totalCount / totalTarget * 100) : 0}%`, height: "100%", background: "#C9F24A", transition: "width .35s ease" } })), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 14, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 } }, s.sections.map((sec) => {
+    const p = secProgress(sec);
+    return /* @__PURE__ */ React.createElement("button", { key: sec.id, onClick: () => {
+      var _a2;
+      setOpenSec(sec.id), (_a2 = document.getElementById("sec-" + sec.id)) == null || _a2.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, style: { background: "none", border: "none", padding: 0, cursor: "pointer", color: "#fff", fontFamily: "inherit", textAlign: "left" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 800, color: SECTION_COLORS[sec.id] } }, sec.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 900, lineHeight: 1.1 } }, p.pct, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11 } }, "%")), /* @__PURE__ */ React.createElement("div", { style: { height: 6, background: "rgba(255,255,255,.2)", borderRadius: 3, marginTop: 4 } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${p.pct}%`, height: "100%", background: SECTION_COLORS[sec.id], borderRadius: 3 } })));
+  }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900 } }, "This week"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800, opacity: 0.6 } }, "resets Monday")), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 } }, s.habits.map((h) => {
+    const c = weekCount(h.id), hit = c >= h.weekly;
+    return /* @__PURE__ */ React.createElement("button", { key: h.id, onClick: () => {
+      bump(h.id, 1), pop("+1");
+    }, style: { ...card, boxShadow: `3px 3px 0 ${INK}`, background: hit ? "#C9F24A" : "#fff", padding: "10px 8px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: INK } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800 } }, h.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 26, fontWeight: 900, lineHeight: 1 } }, c, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, opacity: 0.6 } }, " / ", h.weekly)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, fontWeight: 800, opacity: 0.6, marginTop: 2 } }, "tap +1"));
+  }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: "#FFF8DC" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 800, opacity: 0.7, marginBottom: 4 } }, "Today's if-then"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 16, fontWeight: 700, lineHeight: 1.35 } }, s.ifThen)), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Brain dump"), /* @__PURE__ */ React.createElement("textarea", { value: dump, onChange: (e) => setDump(e.target.value), placeholder: "Anything in your head. No sorting, Claude does that.", rows: 3, style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 16, fontFamily: "inherit", fontWeight: 600, resize: "vertical" } }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 10, alignItems: "center" } }, /* @__PURE__ */ React.createElement("button", { onClick: addDump, style: btn("#C9F24A") }, "Catch it"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, fontWeight: 700, opacity: 0.7 } }, s.inbox.length, " waiting for Claude"))), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 26, fontWeight: 900, letterSpacing: -0.5 } }, "Quests"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 800, opacity: 0.7 } }, totalCleared, " cleared")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 12 } }, s.sections.map((sec) => {
+    var _a2;
+    const p = secProgress(sec), full = p.c === p.t;
+    return /* @__PURE__ */ React.createElement("div", { key: sec.id, id: "sec-" + sec.id, style: { ...card, background: full ? "#C9F24A" : "#fff", padding: 14, borderColor: INK } }, /* @__PURE__ */ React.createElement("button", { onClick: () => setOpenSec(openSec === sec.id ? null : sec.id), "aria-expanded": openSec === sec.id, style: { width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: INK, fontFamily: "inherit" } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 20, fontWeight: 900, color: SECTION_COLORS[sec.id] } }, sec.name), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800, opacity: 0.65 } }, sec.sub)), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 34, fontWeight: 900, lineHeight: 1, whiteSpace: "nowrap" } }, p.c, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 16, opacity: 0.6 } }, " of ", p.t))), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, height: 18, border: `3px solid ${INK}`, borderRadius: 10, background: "#F4F6FF", overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${p.pct}%`, height: "100%", background: SECTION_COLORS[sec.id], transition: "width .35s ease" } }))), openSec === sec.id && sec.id === "Health" && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12, background: "#FFF8DC", border: `2px solid ${INK}`, borderRadius: 12, padding: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 900 } }, "Drinks, last 14 days"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 800, opacity: 0.65 } }, last14().reduce((a, d) => a + (s.drinkLog[d] || 0), 0), " units, ", last14().filter((d) => s.drinkLog[d] === 0).length, " clear")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 3, alignItems: "flex-end", height: 56, marginTop: 8 } }, last14().map((d) => {
+      const u = s.drinkLog[d], h = u === void 0 ? 4 : Math.max(6, Math.min(56, u * 9));
+      return /* @__PURE__ */ React.createElement("div", { key: d, title: `${d}: ${u === void 0 ? "not logged" : u}`, style: { flex: 1, height: h, background: u === void 0 ? "#ddd" : u === 0 ? "#C9F24A" : "#FF5A3C", borderRadius: 4, border: `2px solid ${INK}` } });
+    })), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 10 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, fontWeight: 800 } }, "Today"), /* @__PURE__ */ React.createElement("input", { inputMode: "numeric", value: drinkInput, onChange: (e) => setDrinkInput(e.target.value.replace(/[^0-9]/g, "")), placeholder: (_a2 = s.drinkLog[todayKey()]) != null ? _a2 : "0", style: { width: 64, border: `3px solid ${INK}`, borderRadius: 10, padding: 6, fontSize: 18, fontWeight: 900, fontFamily: "inherit" } }), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      logDrink(todayKey(), Number(drinkInput || 0)), setDrinkInput(""), pop("Logged");
+    }, style: { ...btn("#fff"), padding: "8px 12px", fontSize: 14, boxShadow: `2px 2px 0 ${INK}` } }, "Log"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, fontWeight: 700, opacity: 0.6 } }, "Log only, no target."))), openSec === sec.id && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12, display: "flex", flexDirection: "column", gap: 8 } }, sec.tracks.map((t) => /* @__PURE__ */ React.createElement("div", { key: t.id, style: { display: "flex", gap: 10, alignItems: "center", background: t.count >= t.target ? "#EAF1FF" : "#fff", border: `2px solid ${INK}`, borderRadius: 10, padding: "8px 10px" } }, /* @__PURE__ */ React.createElement("div", { style: { flex: 1 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 14, fontWeight: 800, textDecoration: t.type === "tick" && t.count ? "line-through" : "none", opacity: t.type === "tick" && t.count ? 0.6 : 1 } }, t.name), t.note && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 700, opacity: 0.6 } }, t.note), t.type === "count" && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 6, height: 10, border: `2px solid ${INK}`, borderRadius: 6, background: "#F4F6FF", overflow: "hidden" } }, /* @__PURE__ */ React.createElement("div", { style: { width: `${Math.round(t.count / t.target * 100)}%`, height: "100%", background: SECTION_COLORS[sec.id] } }))), t.type === "count" ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => bump(t.id, -1), "aria-label": "minus one", style: { ...btn("#fff"), padding: "6px 10px", fontSize: 16, boxShadow: `2px 2px 0 ${INK}` } }, "-"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 900, minWidth: 54, textAlign: "center" } }, t.count, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, opacity: 0.6 } }, "/", t.target)), /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      bump(t.id, 1), pop("+1");
+    }, "aria-label": "plus one", style: { ...btn(SECTION_COLORS[sec.id], "#fff"), padding: "6px 12px", fontSize: 18, boxShadow: `2px 2px 0 ${INK}` } }, "+")) : /* @__PURE__ */ React.createElement("button", { onClick: () => {
+      t.count ? bump(t.id, -1) : (bump(t.id, 1), pop("Cleared"));
+    }, "aria-pressed": !!t.count, style: { width: 34, height: 34, borderRadius: 8, border: `3px solid ${INK}`, background: t.count ? "#C9F24A" : "#fff", fontWeight: 900, fontSize: 18, cursor: "pointer", flexShrink: 0 } }, t.count ? "\u2713" : "")))));
+  }))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16 } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 8 } }, "Wins"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" } }, s.wins.slice(0, 20).map((w, i) => /* @__PURE__ */ React.createElement("div", { key: i, style: { display: "flex", gap: 10, fontSize: 14, fontWeight: 700 } }, /* @__PURE__ */ React.createElement("span", { style: { opacity: 0.55, flexShrink: 0 } }, w.date.slice(5)), /* @__PURE__ */ React.createElement("span", null, w.text))))), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: "#F4F6FF" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Sync with HQ"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.7, marginBottom: 10 } }, s.pending.length, " change", s.pending.length === 1 ? "" : "s", " waiting. Push writes a note to Drive that Claude merges at the next brief. Pull loads today's three."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { disabled: busy, onClick: pushToHQ, style: btn("#5B4CFF", "#fff") }, "Push to HQ"), /* @__PURE__ */ React.createElement("button", { disabled: busy, onClick: pullFromHQ, style: btn("#fff") }, "Pull today"), /* @__PURE__ */ React.createElement("button", { disabled: busy, onClick: copyReply, style: btn("#FFC93C") }, "Copy reply")), syncMsg && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 10, fontSize: 14, fontWeight: 800 } }, syncMsg), s.pending.length > 0 && /* @__PURE__ */ React.createElement("pre", { style: { marginTop: 10, background: "#fff", border: `2px solid ${INK}`, borderRadius: 10, padding: 10, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "ui-monospace, monospace" } }, replyText())), /* @__PURE__ */ React.createElement("div", { style: { ...card, padding: 16, background: "#fff" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 900, marginBottom: 4 } }, "Backup and settings"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, fontWeight: 700, opacity: 0.7, marginBottom: 10 } }, "This page keeps its data in this browser only. Export a backup now and then, and import it on another device to move your board."), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 10 } }, /* @__PURE__ */ React.createElement("button", { onClick: () => {
+    const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" }), a = document.createElement("a");
+    a.href = URL.createObjectURL(blob), a.download = `hq-backup-${todayKey()}.json`, a.click();
+  }, style: btn("#fff") }, "Export backup"), /* @__PURE__ */ React.createElement("label", { style: btn("#fff", INK, { display: "inline-block" }) }, "Import backup", /* @__PURE__ */ React.createElement("input", { type: "file", accept: "application/json", style: { display: "none" }, onChange: (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const v = JSON.parse(r.result);
+        v.version === 3 ? (setS({ ...seed, ...v }), setSyncMsg("Backup imported.")) : setSyncMsg("That file is not a v3 backup.");
+      } catch (e2) {
+        setSyncMsg("Could not read that file.");
+      }
+    }, r.readAsText(f);
+  } }))), /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12, fontSize: 13, fontWeight: 800 } }, "Optional: Anthropic API key for Push and Pull"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, fontWeight: 700, opacity: 0.65, marginBottom: 6 } }, "Leave empty and use Copy reply instead. If you add one, it is stored only in this browser."), /* @__PURE__ */ React.createElement("input", { type: "password", defaultValue: localStorage.getItem("hq-api-key") || "", onBlur: (e) => {
+    localStorage.setItem("hq-api-key", e.target.value.trim()), setSyncMsg(e.target.value.trim() ? "Key saved in this browser." : "Key removed.");
+  }, placeholder: "sk-ant-...", style: { width: "100%", boxSizing: "border-box", border: `3px solid ${INK}`, borderRadius: 12, padding: 10, fontSize: 14, fontFamily: "inherit", fontWeight: 600 } })), /* @__PURE__ */ React.createElement("button", { onClick: resetAll, style: { background: "none", border: "none", fontSize: 12, fontWeight: 700, opacity: 0.5, cursor: "pointer", color: INK, alignSelf: "center", textDecoration: "underline", fontFamily: "inherit" } }, "Reset board"));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(HQQuestBoard));
+
+</script>
+</body>
+</html>
